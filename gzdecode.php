@@ -124,11 +124,15 @@ class gzdecode
 			// Advance the pointer after the above
 			$this->position += 4;
 			
-			// Parse the MTIME
-			if (!$this->mtime())
+			// MTIME
+			$mtime = substr($this->compressed_data, $this->position, 4);
+			static $big_endian = (current(unpack('S', "\x00\x01")) === 1) ? true : false;
+			if ($big_endian)
 			{
-				return false;
+				$mtime = strrev($mtime);
 			}
+			$this->MITME = current(unpack('l', $mtime));
+			$this->position += 4;
 			
 			// Get the XFL (eXtra FLags)
 			$this->XFL = ord($this->compressed_data[$this->position++]);
@@ -141,29 +145,54 @@ class gzdecode
 			{
 				return false;
 			}
+			
+			// Parse the FNAME
+			if (!$this->fname())
+			{
+				return false;
+			}
+			
+			// Parse the FCOMMENT
+			if (!$this->fcomment())
+			{
+				return false;
+			}
+			
+			// Parse the FHCRC
+			if (!$this->fhcrc())
+			{
+				return false;
+			}
+			
+			// Decompress the actual data
+			if (($this->data = gzinflate($this->compressed_data)) === false)
+			{
+				return false;
+			}
+			
+			// Check CRC of data
+			$crc = current(unpack('N', substr($this->compressed_data, $this->position, 4)));
+			$this->position += 4;
+			if (crc32($this->data) !== $crc)
+			{
+				return false;
+			}
+			
+			// Check ISIZE of data
+			$isize = current(unpack('N', substr($this->compressed_data, $this->position, 4)));
+			$this->position += 4;
+			if (strlen($this->data) & 0xFFFFFFFF !== $isize)
+			{
+				return false;
+			}
+			
+			// Wow, against all odds, we've actually got a valid gzip string
+			return true;
 		}
 		else
 		{
 			return false;
 		}
-	}
-	
-	private function mtime()
-	{
-		// Endianness
-		static $big_endian = (current(unpack('S', "\x00\x01")) === 1) ? true : false;
-		
-		// MTIME
-		$mtime = substr($this->compressed_data, $this->position, 4);
-		if ($big_endian)
-		{
-			$mtime = strrev($mtime);
-		}
-		$this->MITME = current(unpack('l', $mtime));
-		$this->position += 4;
-		
-		// Nothing can fail
-		return true;
 	}
 	
 	private function fextra()
@@ -200,8 +229,8 @@ class gzdecode
 	{
 		if ($this->flags & 8)
 		{
-			// Get the length of the extra field
-			$len = strspn($this->compressed_data, "\x00", $this->position)));
+			// Get the length of the filename
+			$len = strspn($this->compressed_data, "\x00", $this->position);
 			
 			// Check the length of the string is still valid
 			$this->min_compressed_size += $len + 1;
@@ -220,3 +249,60 @@ class gzdecode
 		// Either there is no filename or it is valid
 		return true;
 	}
+	
+	private function fcomment()
+	{
+		if ($this->flags & 16)
+		{
+			// Get the length of the comment
+			$len = strspn($this->compressed_data, "\x00", $this->position);
+			
+			// Check the length of the string is still valid
+			$this->min_compressed_size += $len + 1;
+			if ($this->compressed_size >= $this->min_compressed_size)
+			{
+				// Set the original comment to the given string
+				$this->comment = substr($this->compressed_data, $this->position, $len);
+				$this->position += $len + 1;
+			}
+			else
+			{
+				return false;
+			}
+		}
+		
+		// Either there is no comment or it is valid
+		return true;
+	}
+	
+	private function fhcrc()
+	{
+		if ($this->flags & 2)
+		{
+			// Check the length of the string is still valid
+			$this->min_compressed_size += $len + 2;
+			if ($this->compressed_size >= $this->min_compressed_size)
+			{
+				// Read the CRC
+				$crc = current(unpack('v', substr($this->compressed_data, $this->position, 2)));
+				
+				// Check the CRC matches
+				if ((crc32(substr($this->compressed_data, 0, $this->position)) & 0xFFFF) === $crc)
+				{
+					$this->position += 2;
+				}
+				else
+				{
+					return false;
+				}
+			}
+			else
+			{
+				return false;
+			}
+		}
+		
+		// Either there is no CRC or it is valid
+		return true;
+	}
+}
