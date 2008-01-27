@@ -102,7 +102,7 @@ class gzdecode
 		$this->compressed_size = strlen($data);
 	}
 	
-	function parse()
+	public function parse()
 	{
 		if ($this->compressed_size >= $this->min_compressed_size)
 		{
@@ -115,21 +115,44 @@ class gzdecode
 			// Get the FLG (FLaGs)
 			$this->flags = ord($data[3]);
 		
-			// FLG bits above four are reserved
+			// FLG bits above (1 << 4) are reserved
 			if ($flg > 0x1F)
 			{
 				return false;
 			}
 			
+			// Advance the pointer after the above
 			$this->position += 4;
 			
+			// Parse the MTIME
 			if (!$this->mtime())
 			{
 				return false;
 			}
+			
+			// Get the XFL (eXtra FLags)
+			$this->XFL = ord($data[$this->position++]);
+		
+			// Get the OS (Operating System)
+			$this->OS = ord($data[$this->position++]);
 		}
 		else
 		{
 			return false;
 		}
+	}
+	
+	private function mtime()
+	{
+		// Endianness
+		static $big_endian = (current(unpack('S', "\x00\x01")) === 1) ? true : false;
+		
+		// MTIME
+		$mtime = substr($data, $this->position, 4);
+		if ($big_endian)
+		{
+			$mtime = strrev($mtime);
+		}
+		$this->MITME = current(unpack('l', $mtime));
+		$this->position += 4;
 	}
