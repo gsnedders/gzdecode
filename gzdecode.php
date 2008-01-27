@@ -126,8 +126,8 @@ class gzdecode
 			
 			// MTIME
 			$mtime = substr($this->compressed_data, $this->position, 4);
-			static $big_endian = (current(unpack('S', "\x00\x01")) === 1) ? true : false;
-			if ($big_endian)
+			// Reverse the string if we're on a big-endian arch because l is the only signed long and is machine endianness
+			if (current(unpack('S', "\x00\x01")) === 1)
 			{
 				$mtime = strrev($mtime);
 			}
@@ -202,6 +202,12 @@ class gzdecode
 			// Read subfield IDs
 			$this->SI1 = $this->compressed_data[$this->position++];
 			$this->SI2 = $this->compressed_data[$this->position++];
+			
+			// SI2 set to zero is reserved for future use
+			if ($this->SI2 === "\x00")
+			{
+				return false;
+			}
 			
 			// Get the length of the extra field
 			$len = current(unpack('v', substr($this->compressed_data, $this->position, 2)));
