@@ -25,7 +25,7 @@
  * THE SOFTWARE.
  *
  * @package gzdecode
- * @version 0.9.1
+ * @version 1.0-dev
  * @copyright 2008 Geoffrey Sneddon
  * @author Geoffrey Sneddon
  * @license http://www.opensource.org/licenses/mit-license.php The MIT License
