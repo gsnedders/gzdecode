@@ -177,33 +177,110 @@ class gzdecode
 			$this->OS = ord($this->compressed_data[$this->position++]);
 			
 			// Parse the FEXTRA
-			if (!$this->fextra())
+			if ($this->flags & 4)
 			{
-				return false;
+				// Read subfield IDs
+				$this->SI1 = $this->compressed_data[$this->position++];
+				$this->SI2 = $this->compressed_data[$this->position++];
+				
+				// SI2 set to zero is reserved for future use
+				if ($this->SI2 === "\x00")
+				{
+					return false;
+				}
+				
+				// Get the length of the extra field
+				$len = current(unpack('v', substr($this->compressed_data, $this->position, 2)));
+				$position += 2;
+				
+				// Check the length of the string is still valid
+				$this->min_compressed_size += $len + 4;
+				if ($this->compressed_size >= $this->min_compressed_size)
+				{
+					// Set the extra field to the given data
+					$this->extra_field = substr($this->compressed_data, $this->position, $len);
+					$this->position += $len;
+				}
+				else
+				{
+					return false;
+				}
 			}
 			
 			// Parse the FNAME
-			if (!$this->fname())
+			if ($this->flags & 8)
 			{
-				return false;
+				// Get the length of the filename
+				$len = strspn($this->compressed_data, "\x00", $this->position);
+				
+				// Check the length of the string is still valid
+				$this->min_compressed_size += $len + 1;
+				if ($this->compressed_size >= $this->min_compressed_size)
+				{
+					// Set the original filename to the given string
+					$this->filename = substr($this->compressed_data, $this->position, $len);
+					$this->position += $len + 1;
+				}
+				else
+				{
+					return false;
+				}
 			}
 			
 			// Parse the FCOMMENT
-			if (!$this->fcomment())
+			if ($this->flags & 16)
 			{
-				return false;
+				// Get the length of the comment
+				$len = strspn($this->compressed_data, "\x00", $this->position);
+				
+				// Check the length of the string is still valid
+				$this->min_compressed_size += $len + 1;
+				if ($this->compressed_size >= $this->min_compressed_size)
+				{
+					// Set the original comment to the given string
+					$this->comment = substr($this->compressed_data, $this->position, $len);
+					$this->position += $len + 1;
+				}
+				else
+				{
+					return false;
+				}
 			}
 			
 			// Parse the FHCRC
-			if (!$this->fhcrc())
+			if ($this->flags & 2)
 			{
-				return false;
+				// Check the length of the string is still valid
+				$this->min_compressed_size += $len + 2;
+				if ($this->compressed_size >= $this->min_compressed_size)
+				{
+					// Read the CRC
+					$crc = current(unpack('v', substr($this->compressed_data, $this->position, 2)));
+					
+					// Check the CRC matches
+					if ((crc32(substr($this->compressed_data, 0, $this->position)) & 0xFFFF) === $crc)
+					{
+						$this->position += 2;
+					}
+					else
+					{
+						return false;
+					}
+				}
+				else
+				{
+					return false;
+				}
 			}
 			
 			// Decompress the actual data
-			if (($this->data = gzinflate($this->compressed_data)) === false)
+			if ($this->data = gzinflate(substr($this->compressed_data, $this->position, -8)) === false)
 			{
 				return false;
+			}
+			else
+			{
+				$this->position = $this->compressed_size - 8;
 			}
 			
 			// Check CRC of data
@@ -229,122 +306,5 @@ class gzdecode
 		{
 			return false;
 		}
-	}
-	
-	private function fextra()
-	{
-		if ($this->flags & 4)
-		{
-			// Read subfield IDs
-			$this->SI1 = $this->compressed_data[$this->position++];
-			$this->SI2 = $this->compressed_data[$this->position++];
-			
-			// SI2 set to zero is reserved for future use
-			if ($this->SI2 === "\x00")
-			{
-				return false;
-			}
-			
-			// Get the length of the extra field
-			$len = current(unpack('v', substr($this->compressed_data, $this->position, 2)));
-			$position += 2;
-			
-			// Check the length of the string is still valid
-			$this->min_compressed_size += $len + 4;
-			if ($this->compressed_size >= $this->min_compressed_size)
-			{
-				// Set the extra field to the given data
-				$this->extra_field = substr($this->compressed_data, $this->position, $len);
-				$this->position += $len;
-			}
-			else
-			{
-				return false;
-			}
-		}
-		
-		// Either there is no extra field or it is valid
-		return true;
-	}
-	
-	private function fname()
-	{
-		if ($this->flags & 8)
-		{
-			// Get the length of the filename
-			$len = strspn($this->compressed_data, "\x00", $this->position);
-			
-			// Check the length of the string is still valid
-			$this->min_compressed_size += $len + 1;
-			if ($this->compressed_size >= $this->min_compressed_size)
-			{
-				// Set the original filename to the given string
-				$this->filename = substr($this->compressed_data, $this->position, $len);
-				$this->position += $len + 1;
-			}
-			else
-			{
-				return false;
-			}
-		}
-		
-		// Either there is no filename or it is valid
-		return true;
-	}
-	
-	private function fcomment()
-	{
-		if ($this->flags & 16)
-		{
-			// Get the length of the comment
-			$len = strspn($this->compressed_data, "\x00", $this->position);
-			
-			// Check the length of the string is still valid
-			$this->min_compressed_size += $len + 1;
-			if ($this->compressed_size >= $this->min_compressed_size)
-			{
-				// Set the original comment to the given string
-				$this->comment = substr($this->compressed_data, $this->position, $len);
-				$this->position += $len + 1;
-			}
-			else
-			{
-				return false;
-			}
-		}
-		
-		// Either there is no comment or it is valid
-		return true;
-	}
-	
-	private function fhcrc()
-	{
-		if ($this->flags & 2)
-		{
-			// Check the length of the string is still valid
-			$this->min_compressed_size += $len + 2;
-			if ($this->compressed_size >= $this->min_compressed_size)
-			{
-				// Read the CRC
-				$crc = current(unpack('v', substr($this->compressed_data, $this->position, 2)));
-				
-				// Check the CRC matches
-				if ((crc32(substr($this->compressed_data, 0, $this->position)) & 0xFFFF) === $crc)
-				{
-					$this->position += 2;
-				}
-				else
-				{
-					return false;
-				}
-			}
-			else
-			{
-				return false;
-			}
-		}
-		
-		// Either there is no CRC or it is valid
-		return true;
 	}
 }
